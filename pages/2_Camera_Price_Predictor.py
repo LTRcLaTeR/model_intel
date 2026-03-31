@@ -1,6 +1,8 @@
 import streamlit as st
 import joblib
 import numpy as np
+import pandas as pd
+import re
 from pathlib import Path
 
 @st.cache_resource
@@ -8,7 +10,19 @@ def load_model():
     model_path = Path(__file__).resolve().parent.parent / "Sony_Camera_Predict.joblib"
     return joblib.load(model_path)
 
+@st.cache_resource
+def load_encoder():
+    encoder_path = Path(__file__).resolve().parent.parent / "model_encoder.joblib"
+    return joblib.load(encoder_path)
+
+@st.cache_data
+def load_ref():
+    ref_path = Path(__file__).resolve().parent.parent / "train_Machine" / "Sony_Price_REF.csv"
+    return pd.read_csv(ref_path)
+
 model = load_model()
+le = load_encoder()
+ref_df = load_ref()
 
 st.title("📷 Camera Price Predictor")
 
@@ -39,9 +53,10 @@ with tab_article:
     ใช้ทฤษฎี **Boosting** สร้างต้นไม้ทีละต้น โดยต้นใหม่จะพยายามแก้ไขความผิดพลาด (Residual Error) ที่เกิดขึ้นของต้นก่อนหน้า ทำให้มีความแม่นยำ (Accuracy) สูงมากในรูปแบบของข้อมูลที่ซับซ้อน
     """)
 
-    st.markdown("##### 📏 Linear Regression")
+    st.markdown("##### 📏 Ridge Regression")
     st.markdown("""
-    ใช้ทฤษฎี **Statistical Modeling** หาความสัมพันธ์เชิงเส้นระหว่างตัวแปรอิสระ (เช่น อายุเครื่อง) กับราคา ช่วยให้โมเดลมีฐานการทำนายที่เสถียรตามแนวโน้มตลาดพื้นฐาน
+    เป็นการปรับปรุงจาก Linear Regression โดยเพิ่มตัวแปรควบคุม (L2 Regularization) เพื่อป้องกันค่าน้ําหนัก
+ตัวแปรไม่ให้โดดเกินไป ช่วยให้โมเดลมีฐานการทํานายที่เสถียรและยึดโยงกับราคาอ้างอิงตลาด (REF) ได้อย่างมั่นคง
     """)
 
     st.markdown("##### 🌳 Extra Trees")
@@ -92,37 +107,77 @@ with tab_article:
     st.divider()
     st.subheader("🚀 วิธีการใช้งานโมเดล")
     st.markdown("""
-    ไปที่แท็บ **🚀 ใช้งานโมเดล** แล้วกรอกข้อมูลกล้องที่ต้องการประเมินราคา ดังนี้:
+    ไปที่แท็บ **🚀 ใช้งานโมเดล** แล้วเลือกรุ่นกล้องจากรายการ จากนั้นระบุข้อมูลเพิ่มเติม 2 รายการ ดังนี้:
     """)
     st.markdown("""
     | ช่องกรอก | คำอธิบาย |
     |---|---|
-    | **Age (years)** | อายุกล้องเป็นปี นับจากปีที่ผลิต |
-    | **Shutter Count** | จำนวนครั้งที่กดชัตเตอร์สะสม |
-    | **Has Box** | มีกล่องหรืออุปกรณ์ครบชุดหรือไม่ (0 = ไม่มี, 1 = มี) |
-    | **Condition Score** | คะแนนสภาพภายนอก 1–10 (10 = ใหม่มาก) |
-    | **Age Score** | คะแนนความเก่าของเครื่อง 1–10 (10 = อายุน้อย) |
-    | **Shutter Score** | คะแนนการใช้งานชัตเตอร์ 1–10 (10 = ใช้น้อยมาก) |
-    | **Price Score** | คะแนนภาพรวมความคุ้มค่าราคา 1–10 |
-    | **Box Score** | คะแนนความสมบูรณ์ของกล่องและอุปกรณ์เสริม 1–10 |
+    | **เลือกรุ่นกล้อง** | เลือกรุ่นจากรายการ Sony_Price_REF — ราคาอ้างอิงตลาดจะถูกโหลดอัตโนมัติ |
+    | **อายุ / Shutter / สภาพ** | ระบุข้อมูลสภาพจริงของกล้อง |
+    | **มีกล่อง** | ระบุว่ามีกล่องและอุปกรณ์ครบหรือไม่ |
     """)
     st.markdown("""
-    เมื่อกรอกข้อมูลครบแล้ว กดปุ่ม **Predict** โมเดลจะแสดง **ราคาประเมินที่เหมาะสม** สำหรับกล้อง Sony มือสองทันที
+    เมื่อเลือกรุ่นแล้ว กดปุ่ม **🔮 ทำนายราคา** โมเดลจะแสดง **ราคาประเมินที่เหมาะสม** พร้อมเปรียบเทียบกับราคาอ้างอิงทันที
     """)
     st.info("💡 ราคาที่ได้เป็นการประมาณการจากข้อมูลตลาด ณ วันที่ 15 มีนาคม 2569 ควรใช้เป็นข้อมูลอ้างอิงเท่านั้น")
 
 with tab_model:
-    age_year = st.number_input("Age (years)", 0, 30, 3)
-    shutter_count = st.number_input("Shutter Count", 0, 200000, 10000)
-    has_box = st.selectbox("Has Box", [0, 1])
-    cond_score = st.slider("Condition Score", 1, 10, 8)
-    age_score = st.slider("Age Score", 1, 10, 7)
-    shutter_score = st.slider("Shutter Score", 1, 10, 7)
-    price_score = st.slider("Price Score", 1, 10, 5)
-    box_score = st.slider("Box Score", 1, 10, 5)
+    camera_names = ref_df["model"].tolist()
+    selected = st.selectbox("เลือกรุ่นกล้อง Sony", camera_names)
 
-    if st.button("Predict"):
-        data = np.array([[age_year, shutter_count, has_box, cond_score, age_score, shutter_score, price_score, box_score]])
-        price = model.predict(data)
+    row = ref_df[ref_df["model"] == selected].iloc[0]
 
-        st.success(f"Predicted Price: {price[0]:,.0f} บาท")
+    max_age = int(row["age_year"])
+    default_shutter = int(row["shutter_claim"])
+    default_condition = row["condition"]
+
+    condition_options = ["excellent", "very_good", "good", "fair", "poor"]
+    default_cond_idx = condition_options.index(default_condition) if default_condition in condition_options else 2
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        age_year = st.number_input("อายุ (ปี)", min_value=0, max_value=max_age, value=max_age,
+                                   help=f"กล้องรุ่นนี้เปิดตัวมา {max_age} ปี (สูงสุด)")
+    with col2:
+        shutter_count = st.number_input("Shutter Count", min_value=0, max_value=9999999, value=default_shutter)
+    with col3:
+        condition = st.selectbox("สภาพ", condition_options, index=default_cond_idx,
+                                 format_func=lambda x: {"excellent": "Excellent ✨", "very_good": "Very Good 👍",
+                                                         "good": "Good 👌", "fair": "Fair 🤏", "poor": "Poor 😵"}.get(x, x))
+
+    st.divider()
+
+    has_box = st.selectbox("มีกล่อง / อุปกรณ์ครบ?", [0, 1], format_func=lambda x: "มี ✅" if x == 1 else "ไม่มี ❌")
+
+    cond_map = {"excellent": 10, "very_good": 8, "good": 6, "fair": 4, "poor": 2}
+    cond_score    = cond_map.get(condition, 5)
+    age_score     = 10 if age_year < 3 else 5
+    shutter_score = 10 if shutter_count < 20000 else 5
+    box_score     = 10 if has_box == 1 else 0
+
+    ref_p = float(re.sub(r'[^0-9.]', '', str(row['price_used'])))
+
+    with st.expander("ดูคะแนน Features ที่คำนวณได้"):
+        sc1, sc2, sc3, sc4 = st.columns(4)
+        sc1.metric("cond_score", cond_score)
+        sc2.metric("age_score", age_score)
+        sc3.metric("shutter_score", shutter_score)
+        sc4.metric("box_score", box_score)
+        st.caption(f"ราคาอ้างอิงตลาด (REF): {ref_p:,.0f} บาท")
+
+    if st.button("🔮 ทำนายราคา"):
+        m_clean = selected.replace('Sony ', '')
+        try:
+            m_idx = le.transform([m_clean])[0]
+        except Exception:
+            m_idx = 0
+
+        input_df = pd.DataFrame(
+            [[m_idx, ref_p, age_year, shutter_count, has_box, cond_score, age_score, shutter_score, box_score]],
+            columns=['model_encoded', 'price_used_ref_numeric', 'age_year', 'shutter_count',
+                     'has_box', 'cond_score', 'age_score', 'shutter_score', 'box_score']
+        )
+        pred = model.predict(input_df)[0]
+        final_price = (pred * 0.3) + (ref_p * 0.7)
+
+        st.success(f"ราคาประเมิน: **{final_price:,.0f} บาท**")
